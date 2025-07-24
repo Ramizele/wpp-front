@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Batch Sender</title>
+  <script>
+    const API_URL = "https://wpp-back.fly.dev"; // cambiar por tu backend
+
+    async function runJob() {
+      const csvFile = document.getElementById("csv").files[0];
+      const tplFile = document.getElementById("tpl").files[0];
+      if (!csvFile || !tplFile) {
+        alert("Subí CSV y plantilla");
+        return;
+      }
+      const form = new FormData();
+      form.append("csv", csvFile);
+      form.append("tpl", tplFile);
+
+      const res = await fetch(`${API_URL}/run`, { method: "POST", body: form });
+      const { job_id } = await res.json();
+      document.getElementById("status").textContent = `Job ${job_id} iniciado…`;
+      pollStatus(job_id);
+    }
+
+    async function pollStatus(jobId) {
+      const timer = setInterval(async () => {
+        const res = await fetch(`${API_URL}/status/${jobId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById("status").textContent = JSON.stringify(data);
+        if (data.state === "finished" || data.state === "cancelled") {
+          clearInterval(timer);
+        }
+      }, 3000);
+    }
+  </script>
+</head>
+<body class="p-4 font-sans">
+  <h1 class="text-2xl mb-4">WhatsApp Batch Sender</h1>
+
+  <label class="block mb-2">CSV de contactos:
+    <input type="file" id="csv" accept=".csv" />
+  </label>
+
+  <label class="block mb-4">Plantilla.txt:
+    <input type="file" id="tpl" accept=".txt" />
+  </label>
+
+  <button onclick="runJob()" class="px-4 py-2 bg-green-600 text-white rounded">Enviar</button>
+
+  <pre id="status" class="mt-6 bg-gray-100 p-2"></pre>
+</body>
+</html>
