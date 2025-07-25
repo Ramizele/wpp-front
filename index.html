@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WhatsApp Batch Sender</title>
   <script>
-    const API_URL = "https://wpp-back.fly.dev"; // cambiar por tu backend
+    // URL pública del backend (ngrok)
+    const API_URL = "https://5b96baf6ee4f.ngrok-free.app";
 
     async function runJob() {
       const csvFile = document.getElementById("csv").files[0];
@@ -19,6 +20,10 @@
       form.append("tpl", tplFile);
 
       const res = await fetch(`${API_URL}/run`, { method: "POST", body: form });
+      if (!res.ok) {
+        document.getElementById("status").textContent = "Error al iniciar job";
+        return;
+      }
       const { job_id } = await res.json();
       document.getElementById("status").textContent = `Job ${job_id} iniciado…`;
       pollStatus(job_id);
@@ -37,19 +42,20 @@
     }
   </script>
 </head>
-<body class="p-4 font-sans">
-  <h1 class="text-2xl mb-4">WhatsApp Batch Sender</h1>
+<body style="font-family:Arial, sans-serif; margin:40px;">
+  <h1>WhatsApp Batch Sender</h1>
 
-  <label class="block mb-2">CSV de contactos:
+  <label>CSV de contactos:
     <input type="file" id="csv" accept=".csv" />
   </label>
 
-  <label class="block mb-4">Plantilla.txt:
+  <label style="margin-left:20px;">Plantilla.txt:
     <input type="file" id="tpl" accept=".txt" />
   </label>
 
-  <button onclick="runJob()" class="px-4 py-2 bg-green-600 text-white rounded">Enviar</button>
+  <button onclick="runJob()" style="margin-left:20px;">Enviar</button>
 
-  <pre id="status" class="mt-6 bg-gray-100 p-2"></pre>
+  <pre id="status" style="margin-top:20px;background:#f9f9f9;padding:10px;border:1px solid #ccc;"></pre>
 </body>
 </html>
+
