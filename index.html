@@ -4,58 +4,115 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WhatsApp Batch Sender</title>
+  <style>
+    body{font-family:Arial, sans-serif;margin:40px}
+    table{border-collapse:collapse;margin-top:10px}
+    th,td{border:1px solid #ccc;padding:6px}
+    input[type=text],textarea{width:100%}
+    textarea{resize:vertical}
+    button{cursor:pointer}
+  </style>
   <script>
-    // URL pública del backend (ngrok)
+    // ⚠️ Cambiá esta URL cada vez que reinicies ngrok o cuando pases a Fly.io
     const API_URL = "https://5b96baf6ee4f.ngrok-free.app";
 
-    async function runJob() {
-      const csvFile = document.getElementById("csv").files[0];
-      const tplFile = document.getElementById("tpl").files[0];
-      if (!csvFile || !tplFile) {
-        alert("Subí CSV y plantilla");
-        return;
-      }
-      const form = new FormData();
-      form.append("csv", csvFile);
-      form.append("tpl", tplFile);
+    // -----------------------------  PLANTILLAS  -----------------------------
+    const templates = {}; // etiqueta → {con_nombre:[], sin_nombre:[]}
 
-      const res = await fetch(`${API_URL}/run`, { method: "POST", body: form });
-      if (!res.ok) {
-        document.getElementById("status").textContent = "Error al iniciar job";
-        return;
+    function addTemplate(){
+      const label=document.getElementById('etiqueta').value.trim().toLowerCase();
+      const msg=document.getElementById('mensaje').value.trim();
+      if(!label||!msg)return alert('Completa etiqueta y mensaje');
+      if(!templates[label])templates[label]={con_nombre:[],sin_nombre:[]};
+      const bucket=msg.includes('{nombre}')?'con_nombre':'sin_nombre';
+      templates[label][bucket].push(msg);
+      renderTable();
+      document.getElementById('mensaje').value='';
+    }
+
+    function renderTable(){
+      const tbody=document.getElementById('tplBody');
+      tbody.innerHTML='';
+      for(const [lab,obj] of Object.entries(templates)){
+        const row=tbody.insertRow();
+        row.insertCell().textContent=lab;
+        row.insertCell().textContent=obj.con_nombre.join(' | ');
+        row.insertCell().textContent=obj.sin_nombre.join(' | ');
       }
-      const { job_id } = await res.json();
-      document.getElementById("status").textContent = `Job ${job_id} iniciado…`;
+    }
+
+    // ----------------------------- ENVÍO -----------------------------
+    let currentJob=null;
+    let pollTimer=null;
+
+    async function runJob(){
+      if(currentJob){alert('Ya hay un job en curso');return;}
+      const csvFile=document.getElementById('csv').files[0];
+      if(!csvFile)return alert('Subí el CSV de contactos');
+      if(Object.keys(templates).length===0)return alert('Agregá al menos una plantilla');
+
+      const tplBlob=new Blob([JSON.stringify(templates)],{type:'text/plain'});
+      const form=new FormData();
+      form.append('csv',csvFile);
+      form.append('tpl',tplBlob,'plantilla.txt');
+
+      const res=await fetch(`${API_URL}/run`,{method:'POST',body:form});
+      if(!res.ok){document.getElementById('status').textContent='Error al iniciar job';return;}
+      const {job_id}=await res.json();
+      currentJob=job_id;
+      document.getElementById('status').textContent=`Job ${job_id} iniciado…`;
       pollStatus(job_id);
     }
 
-    async function pollStatus(jobId) {
-      const timer = setInterval(async () => {
-        const res = await fetch(`${API_URL}/status/${jobId}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        document.getElementById("status").textContent = JSON.stringify(data);
-        if (data.state === "finished" || data.state === "cancelled") {
-          clearInterval(timer);
+    function pollStatus(id){
+      pollTimer=setInterval(async()=>{
+        const r=await fetch(`${API_URL}/status/${id}`);
+        if(!r.ok)return;
+        const data=await r.json();
+        document.getElementById('status').textContent=JSON.stringify(data);
+        if(data.state==='finished'||data.state==='cancelled'){
+          clearInterval(pollTimer);
+          pollTimer=null;
+          currentJob=null;
         }
-      }, 3000);
+      },3000);
+    }
+
+    // ----------------------------- PAUSA -----------------------------
+    function pauseJob(){
+      if(!pollTimer){alert('No hay job corriendo');return;}
+      clearInterval(pollTimer);
+      pollTimer=null;
+      document.getElementById('status').textContent+='\n[Pausado: se detuvo el polling]';
     }
   </script>
 </head>
-<body style="font-family:Arial, sans-serif; margin:40px;">
+<body>
   <h1>WhatsApp Batch Sender</h1>
 
-  <label>CSV de contactos:
-    <input type="file" id="csv" accept=".csv" />
-  </label>
+  <!-- CSV -->
+  <p>
+    <label>CSV de contactos:
+      <input type="file" id="csv" accept=".csv" />
+    </label>
+  </p>
 
-  <label style="margin-left:20px;">Plantilla.txt:
-    <input type="file" id="tpl" accept=".txt" />
-  </label>
+  <!-- Plantillas -->
+  <h3>Agregar plantilla</h3>
+  <p>
+    <input type="text" id="etiqueta" placeholder="Etiqueta (ej: msj)" style="width:120px">
+    <textarea id="mensaje" rows="2" placeholder="Mensaje – usa {nombre} para insertar el nombre"></textarea>
+    <button onclick="addTemplate()">Agregar</button>
+  </p>
 
-  <button onclick="runJob()" style="margin-left:20px;">Enviar</button>
+  <table>
+    <thead><tr><th>Etiqueta</th><th>con_nombre</th><th>sin_nombre</th></tr></thead>
+    <tbody id="tplBody"></tbody>
+  </table>
 
-  <pre id="status" style="margin-top:20px;background:#f9f9f9;padding:10px;border:1px solid #ccc;"></pre>
+  <button onclick="runJob()" style="margin-top:20px;">Enviar</button>
+  <button onclick="pauseJob()" style="margin-top:20px;margin-left:10px;">Pausar</button>
+
+  <pre id="status" style="margin-top:20px;background:#f5f5f5;padding:10px;border:1px solid #ccc;"></pre>
 </body>
 </html>
-
