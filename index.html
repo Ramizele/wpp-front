@@ -5,114 +5,334 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WhatsApp Batch Sender</title>
   <style>
-    body{font-family:Arial, sans-serif;margin:40px}
-    table{border-collapse:collapse;margin-top:10px}
-    th,td{border:1px solid #ccc;padding:6px}
+    body{font-family:Arial, sans-serif;margin:40px;background:#fafafa}
+    h1{margin:0 0 8px}
+    .box{border:1px solid #e5e5e5;border-radius:12px;padding:16px;background:#fff}
+    .row{display:flex;gap:10px;align-items:center}
+    .row-end{display:flex;gap:10px;align-items:flex-end}
+    .sm{font-size:12px;color:#555}
+    table{border-collapse:collapse;margin-top:10px;width:100%}
+    th,td{border:1px solid #ccc;padding:6px;text-align:left}
     input[type=text],textarea{width:100%}
     textarea{resize:vertical}
     button{cursor:pointer}
+    pre{background:#f5f5f5;padding:10px;border:1px solid #ccc;white-space:pre-wrap}
   </style>
-  <script>
-    // ⚠️ Cambiá esta URL cada vez que reinicies ngrok o cuando pases a Fly.io
-    const API_URL = "https://0c334ba78719.ngrok-free.app";
-
-    // -----------------------------  PLANTILLAS  -----------------------------
-    const templates = {}; // etiqueta → {con_nombre:[], sin_nombre:[]}
-
-    function addTemplate(){
-      const label=document.getElementById('etiqueta').value.trim().toLowerCase();
-      const msg=document.getElementById('mensaje').value.trim();
-      if(!label||!msg)return alert('Completa etiqueta y mensaje');
-      if(!templates[label])templates[label]={con_nombre:[],sin_nombre:[]};
-      const bucket=msg.includes('{nombre}')?'con_nombre':'sin_nombre';
-      templates[label][bucket].push(msg);
-      renderTable();
-      document.getElementById('mensaje').value='';
-    }
-
-    function renderTable(){
-      const tbody=document.getElementById('tplBody');
-      tbody.innerHTML='';
-      for(const [lab,obj] of Object.entries(templates)){
-        const row=tbody.insertRow();
-        row.insertCell().textContent=lab;
-        row.insertCell().textContent=obj.con_nombre.join(' | ');
-        row.insertCell().textContent=obj.sin_nombre.join(' | ');
-      }
-    }
-
-    // ----------------------------- ENVÍO -----------------------------
-    let currentJob=null;
-    let pollTimer=null;
-
-    async function runJob(){
-      if(currentJob){alert('Ya hay un job en curso');return;}
-      const csvFile=document.getElementById('csv').files[0];
-      if(!csvFile)return alert('Subí el CSV de contactos');
-      if(Object.keys(templates).length===0)return alert('Agregá al menos una plantilla');
-
-      const tplBlob=new Blob([JSON.stringify(templates)],{type:'text/plain'});
-      const form=new FormData();
-      form.append('csv',csvFile);
-      form.append('tpl',tplBlob,'plantilla.txt');
-
-      const res=await fetch(`${API_URL}/run`,{method:'POST',body:form});
-      if(!res.ok){document.getElementById('status').textContent='Error al iniciar job';return;}
-      const {job_id}=await res.json();
-      currentJob=job_id;
-      document.getElementById('status').textContent=`Job ${job_id} iniciado…`;
-      pollStatus(job_id);
-    }
-
-    function pollStatus(id){
-      pollTimer=setInterval(async()=>{
-        const r=await fetch(`${API_URL}/status/${id}`);
-        if(!r.ok)return;
-        const data=await r.json();
-        document.getElementById('status').textContent=JSON.stringify(data);
-        if(data.state==='finished'||data.state==='cancelled'){
-          clearInterval(pollTimer);
-          pollTimer=null;
-          currentJob=null;
-        }
-      },3000);
-    }
-
-    // ----------------------------- PAUSA -----------------------------
-    function pauseJob(){
-      if(!pollTimer){alert('No hay job corriendo');return;}
-      clearInterval(pollTimer);
-      pollTimer=null;
-      document.getElementById('status').textContent+='\n[Pausado: se detuvo el polling]';
-    }
-  </script>
 </head>
 <body>
   <h1>WhatsApp Batch Sender</h1>
+  <p class="sm">Modo archivo único para Vercel estático: subí este <code>index.html</code> y listo.</p>
+
+  <!-- Backend URL editable -->
+  <div class="row-end" style="margin:12px 0 20px 0">
+    <div style="flex:1" class="box">
+      <label>Backend URL
+        <input type="text" id="apiUrl" placeholder="https://<tu-backend>" />
+      </label>
+      <div class="sm">Usando: <code id="apiUrlSaved"></code></div>
+      <div class="sm">La URL se guarda en <code>localStorage</code>.</div>
+    </div>
+    <button onclick="saveApiUrl()" style="height:36px">Guardar</button>
+  </div>
 
   <!-- CSV -->
-  <p>
+  <div class="box" style="margin-bottom:12px">
     <label>CSV de contactos:
       <input type="file" id="csv" accept=".csv" />
     </label>
-  </p>
+  </div>
 
   <!-- Plantillas -->
-  <h3>Agregar plantilla</h3>
-  <p>
-    <input type="text" id="etiqueta" placeholder="Etiqueta (ej: msj)" style="width:120px">
-    <textarea id="mensaje" rows="2" placeholder="Mensaje – usa {nombre} para insertar el nombre"></textarea>
-    <button onclick="addTemplate()">Agregar</button>
-  </p>
+  <div class="box">
+    <h3>Agregar plantilla</h3>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" id="etiqueta" placeholder="Etiqueta (ej: msj)" style="width:160px">
+      <textarea id="mensaje" rows="2" placeholder="Mensaje – usa {nombre} para insertar el nombre"></textarea>
+      <button onclick="addTemplate()">Agregar</button>
+    </div>
+    <table>
+      <thead><tr><th>Etiqueta</th><th>con_nombre</th><th>sin_nombre</th></tr></thead>
+      <tbody id="tplBody"><tr><td colspan="3" style="color:#999">— sin plantillas —</td></tr></tbody>
+    </table>
+  </div>
 
-  <table>
-    <thead><tr><th>Etiqueta</th><th>con_nombre</th><th>sin_nombre</th></tr></thead>
-    <tbody id="tplBody"></tbody>
-  </table>
+  <div class="row" style="margin-top:16px">
+    <button onclick="runJob()">Enviar</button>
+    <button onclick="pauseJob()">Pausar</button>
+    <button onclick="exportNow()">Exportar CSV ahora</button>
+    <span id="counts" class="sm"></span>
+  </div>
 
-  <button onclick="runJob()" style="margin-top:20px;">Enviar</button>
-  <button onclick="pauseJob()" style="margin-top:20px;margin-left:10px;">Pausar</button>
+  <div class="box" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <strong>Progreso</strong>
+      <div class="sm">
+        <span style="margin-right:12px">Estado: <b id="st_state">idle</b></span>
+        <span style="margin-right:12px">Enviados: <b id="st_sent">0</b></span>
+        <span style="margin-right:12px">Fallidos: <b id="st_failed">0</b></span>
+        <span style="margin-right:12px">Restantes: <b id="st_remaining">0</b></span>
+        <span>Total: <b id="st_total">0</b></span>
+      </div>
+    </div>
+    <div style="height:10px;width:100%;overflow:hidden;border-radius:999px;background:#eee">
+      <div id="bar" style="height:100%;width:0;background:#222;transition:width .3s" aria-label="Progreso"></div>
+    </div>
+  </div>
 
-  <pre id="status" style="margin-top:20px;background:#f5f5f5;padding:10px;border:1px solid #ccc;"></pre>
+  <pre id="status" style="margin-top:12px"></pre>
+
+  <div class="box" style="margin-top:12px">
+    <strong>Tests (sin backend)</strong>
+    <div class="row" style="margin-top:8px">
+      <button onclick="testMerge()">Test: mergeResults</button>
+      <button onclick="testExport()">Test: export CSV</button>
+      <button onclick="testFinalize()">Test: finalizar & exportar</button>
+    </div>
+    <div class="sm">Validá la UI sin tocar tu backend.</div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <strong>Ayuda rápida</strong>
+    <ul>
+      <li>Placeholders: <code>{nombre}</code> (y opcionalmente <code>{telefono}</code> si tu backend lo soporta).</li>
+      <li>El CSV se descarga automáticamente cuando la campaña termina o queda en pausa.</li>
+      <li>Endpoints asumidos: <code>POST /run</code>, <code>GET /status/{job_id}</code>, <code>POST /pause</code>.</li>
+    </ul>
+  </div>
+
+  <script>
+    // ===================== Config y estado =====================
+    let API_URL = (localStorage.getItem('api_url') || 'https://0c334ba78719.ngrok-free.app').replace(/\/+$/, '');
+    const FINISHED_STATES = new Set(['finished','cancelled','completed','paused','no_targets','stopped','done']);
+
+    const $ = (id) => document.getElementById(id);
+
+    // Plantillas: etiqueta -> {con_nombre:[], sin_nombre:[]}
+    const templates = {};
+
+    // Estado de ejecución
+    let currentJob = null;
+    let pollTimer = null;
+    let accResults = []; // acumulador [{name,phone,status,error}]
+
+    // ===================== Utilidades =====================
+    function setStatus(text){ $('status').textContent = String(text); }
+    function appendStatus(text){ $('status').textContent += "\n" + String(text); }
+
+    function setNumbers({state, sent, failed, total, remaining}){
+      $('st_state').textContent = state ?? 'idle';
+      $('st_sent').textContent = sent ?? 0;
+      $('st_failed').textContent = failed ?? 0;
+      $('st_total').textContent = (total ?? (sent||0)+(failed||0));
+      $('st_remaining').textContent = remaining ?? Math.max(0, (total||0) - (sent||0) - (failed||0));
+      const done = (sent||0) + (failed||0);
+      const denom = (total>0 ? total : (done||1));
+      const pct = Math.min(100, Math.round((done/denom)*100));
+      $('bar').style.width = pct + '%';
+    }
+
+    function normalizeRow(r){
+      const name   = r?.name ?? r?.Nombre ?? r?.nombre ?? '';
+      const phone  = r?.phone ?? r?.telefono ?? r?.tel ?? '';
+      const status = r?.status ?? r?.estado ?? '';
+      const error  = r?.error ?? r?.last_error ?? '';
+      return { name, phone, status, error };
+    }
+
+    function mergeResults(incoming){
+      if(!Array.isArray(incoming) || !incoming.length) return;
+      const map = new Map(accResults.map(x => [x.phone, x]));
+      for(const r of incoming){
+        const n = normalizeRow(r);
+        const key = n.phone || Math.random().toString(36).slice(2);
+        map.set(key, { ...(map.get(key) || {}), ...n });
+      }
+      accResults = Array.from(map.values());
+      $('counts').textContent = `Contactados: ${accResults.filter(x=>String(x.status).toLowerCase()==='contacted').length} | No contactados/errores: ${accResults.filter(x=>String(x.status).toLowerCase()!=='contacted').length}`;
+    }
+
+    function downloadCsv(rows, filenamePrefix = 'whatsapp_campaign'){
+      const headers = ['name','phone','status','error'];
+      const escape = (s = '') => '"' + String(s).replaceAll('"','""') + '"';
+      const csv = [headers.join(',')]
+        .concat(rows.map(r => headers.map(h => escape(r?.[h] ?? '')).join(',')))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      a.href = url; a.download = `${filenamePrefix}_${ts}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function finalizeAndExport(state, dataResults){
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      const rows = (accResults.length ? accResults : (Array.isArray(dataResults)?dataResults:[])).map(normalizeRow);
+      if(rows.length){ downloadCsv(rows); }
+      appendStatus(`[${state}] CSV generado (${rows.length} filas).`);
+      currentJob = null;
+    }
+
+    // ===================== Plantillas =====================
+    function addTemplate(){
+      const label = $('etiqueta').value.trim().toLowerCase();
+      const msg   = $('mensaje').value.trim();
+      if(!label || !msg) return alert('Completa etiqueta y mensaje');
+      if(!templates[label]) templates[label] = { con_nombre:[], sin_nombre:[] };
+      const bucket = msg.includes('{nombre}') ? 'con_nombre' : 'sin_nombre';
+      templates[label][bucket].push(msg);
+      renderTable();
+      $('mensaje').value = '';
+    }
+
+    function renderTable(){
+      const tbody = $('tplBody');
+      tbody.innerHTML = '';
+      const entries = Object.entries(templates);
+      if(!entries.length){
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 3; td.style.color = '#999'; td.textContent = '— sin plantillas —';
+        tr.appendChild(td); tbody.appendChild(tr); return;
+      }
+      for(const [lab,obj] of entries){
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td'); td1.textContent = lab;
+        const td2 = document.createElement('td'); td2.textContent = obj.con_nombre.join(' | ');
+        const td3 = document.createElement('td'); td3.textContent = obj.sin_nombre.join(' | ');
+        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tbody.appendChild(tr);
+      }
+    }
+
+    // ===================== API URL editable =====================
+    function refreshApiUi(){
+      $('apiUrl').value = API_URL;
+      $('apiUrlSaved').textContent = API_URL;
+    }
+    function saveApiUrl(){
+      const v = $('apiUrl').value.trim();
+      if(!v) return alert('Ingresá una URL válida');
+      API_URL = v.replace(/\/+$/, '');
+      localStorage.setItem('api_url', API_URL);
+      refreshApiUi();
+      appendStatus(`[config] Backend actualizado: ${API_URL}`);
+    }
+
+    // ===================== Envío =====================
+    async function runJob(){
+      if(currentJob){ alert('Ya hay un job en curso'); return; }
+      const csvFile = $('csv').files[0];
+      if(!csvFile) return alert('Subí el CSV de contactos');
+      if(Object.keys(templates).length===0) return alert('Agregá al menos una plantilla');
+
+      accResults = [];
+      $('counts').textContent = '';
+      setNumbers({state:'running', sent:0, failed:0, total:0, remaining:0});
+      setStatus('');
+
+      const tplBlob = new Blob([JSON.stringify(templates)], { type:'text/plain' });
+      const form = new FormData();
+      form.append('csv', csvFile);
+      form.append('tpl', tplBlob, 'plantilla.txt');
+
+      try{
+        const res = await fetch(`${API_URL}/run`, { method:'POST', body: form });
+        if(!res.ok){ setStatus('Error al iniciar job'); return; }
+        const data = await res.json();
+        const job_id = data?.job_id || data?.jobId || data?.id;
+        if(!job_id){ setStatus('Backend no devolvió job_id'); return; }
+        currentJob = job_id;
+        appendStatus(`Job ${job_id} iniciado…`);
+        pollStatus(job_id);
+      }catch(e){ setStatus('Error: ' + (e?.message || e)); }
+    }
+
+    function pollStatus(id){
+      if(pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async ()=>{
+        try{
+          const r = await fetch(`${API_URL}/status/${id}`);
+          if(!r.ok) return; // seguimos intentando
+          const s = await r.json();
+          const state = String(s.state || s.status || 'running');
+          const sent = Number(s.sent ?? 0);
+          const failed = Number(s.failed ?? 0);
+          const total = Number(s.total ?? 0);
+          const remaining = Number(s.remaining ?? Math.max(0, (s.total ?? 0) - (s.sent ?? 0) - (s.failed ?? 0)));
+          setNumbers({state, sent, failed, total, remaining});
+          const resumen = `state=${s.state} sent=${s.sent} failed=${s.failed} total=${s.total}`;
+          setStatus(resumen + "\n\n" + JSON.stringify(s, null, 2));
+          if(Array.isArray(s.results) && s.results.length){ mergeResults(s.results); }
+          if(FINISHED_STATES.has(state)){
+            clearInterval(pollTimer); pollTimer = null;
+            finalizeAndExport(state, s.results);
+          }
+        }catch(e){ appendStatus('Error en polling: ' + (e?.message || e)); }
+      }, 3000);
+    }
+
+    // ===================== Pausa =====================
+    async function pauseJob(){
+      if(!currentJob){ alert('No hay job corriendo'); return; }
+      try{
+        const res = await fetch(`${API_URL}/pause`, {
+          method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ job_id: currentJob })
+        });
+        if(!res.ok){ appendStatus('Error al pausar: ' + await res.text()); }
+        else { appendStatus('Pausa enviada al backend'); }
+      }catch(e){ appendStatus('Error al pausar: ' + (e?.message || e)); }
+      finalizeAndExport('paused', accResults);
+    }
+
+    // ===================== Export manual =====================
+    function exportNow(){
+      const rows = accResults.map(normalizeRow);
+      if(!rows.length) return alert('No hay resultados acumulados aún');
+      downloadCsv(rows);
+    }
+
+    // ===================== Tests (sin backend) =====================
+    function testMerge(){
+      mergeResults([
+        { name:'Ana', phone:'111', status:'contacted' },
+        { name:'Luis', phone:'222', status:'failed', error:'no whatsapp' },
+        { name:'Ana X', phone:'111', status:'contacted' }
+      ]);
+      appendStatus('[test] mergeResults OK');
+    }
+    function testExport(){
+      downloadCsv([
+        { name:'Test1', phone:'123', status:'contacted' },
+        { name:'Test2', phone:'456', status:'failed', error:'not found' },
+      ], 'test_export');
+      appendStatus('[test] export CSV OK');
+    }
+    function testFinalize(){
+      accResults = [
+        { name:'A', phone:'1', status:'contacted' },
+        { name:'B', phone:'2', status:'failed', error:'rate limited' }
+      ];
+      finalizeAndExport('completed', accResults);
+    }
+
+    // Exponer para los botones de test
+    window.testMerge = testMerge;
+    window.testExport = testExport;
+    window.testFinalize = testFinalize;
+
+    // Exponer acciones principales
+    window.saveApiUrl = saveApiUrl;
+    window.addTemplate = addTemplate;
+    window.runJob = runJob;
+    window.pauseJob = pauseJob;
+    window.exportNow = exportNow;
+
+    // Init
+    window.addEventListener('DOMContentLoaded', ()=>{
+      refreshApiUi();
+      appendStatus(`[config] Backend: ${API_URL}`);
+    });
+  </script>
 </body>
 </html>
